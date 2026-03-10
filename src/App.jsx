@@ -21,17 +21,22 @@ import {
 import { format, subDays, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
-const parseSMS = (text) => {
-  const amountRegex = /(?:rs|inr|aed|\$|usd|eur|amount|debited|spent)\.?\s*([\d,]+\.?\d*)/i;
-  const merchantRegex = /(?:at|to|on)\s+([A-Z0-9\s&]{3,20})/i;
-  const amountMatch = text.match(amountRegex);
-  const merchantMatch = text.match(merchantRegex);
-  return {
-    amount: amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 0,
-    merchant: merchantMatch ? merchantMatch[1].trim() : 'Store Purchase',
-    date: new Date().toISOString(),
-    id: Math.random().toString(36).substr(2, 9)
-  };
+const parseBulkFetch = (text) => {
+  // Enhanced regex for multiple AED alerts in one text block
+  const txRegex = /(?:aed|spent|debited|amt)\.?\s*([\d,]+\.?\d*).*?(?:at|to|on|with)\s+([A-Z0-9\s&]{3,25})/gi;
+  const results = [];
+  let match;
+  while ((match = txRegex.exec(text)) !== null) {
+    if (parseFloat(match[1]) > 0) {
+      results.push({
+        amount: parseFloat(match[1].replace(/,/g, '')),
+        merchant: match[2].trim() || 'Merchant',
+        date: new Date().toISOString(),
+        id: Math.random().toString(36).substr(2, 9)
+      });
+    }
+  }
+  return results;
 };
 
 const getCategoryIcon = (merchant) => {
@@ -97,7 +102,7 @@ export default function App() {
     setActiveTab('summary');
   };
 
-  const handleSync = () => {
+  const handleSync = async () => {
     if (!isEmailConnected) {
       const confirm = window.confirm("SpendWise wants to connect to your Gmail/Outlook to scan for bank debit alerts. This happens locally on your device. Proceed?");
       if (confirm) {
@@ -112,10 +117,28 @@ export default function App() {
     }
 
     setIsSyncing(true);
-    setTimeout(() => {
+
+    // Attempt to read from Clipboard (Works on iPhone if user grants permission)
+    try {
+      const text = await navigator.clipboard.readText();
+      const fetched = parseBulkFetch(text);
+
+      setTimeout(() => {
+        setIsSyncing(false);
+        if (fetched.length > 0) {
+          const confirm = window.confirm(`Found ${fetched.length} new transactions in your copied email text. Import them now?`);
+          if (confirm) {
+            setExpenses(prev => [...fetched, ...prev]);
+            alert(`Success! Fetched ${fetched.length} transactions from this month.`);
+          }
+        } else {
+          alert("No new AED transactions found in your clipboard. Make sure you copied the bank email text!");
+        }
+      }, 1500);
+    } catch (err) {
       setIsSyncing(false);
-      alert("Inbox scanned. No new bank alerts found at this time.");
-    }, 2000);
+      alert("Please allow SpendWise to access your clipboard to fetch email data.");
+    }
   };
 
   return (
