@@ -373,7 +373,7 @@ function HistoryPage({ expenses, setExpenses, onBack }) {
 export default function App() {
   // YOU NEED TO REPLACE THIS CLIENT_ID WITH YOUR OWN FROM GOOGLE CLOUD CONSOLE
   // I will provide instructions on how to get it in the chat.
-  const GOOGLE_CLIENT_ID = "316523238032-s219nekamprervv4ttr101ol6170p1of.apps.googleusercontent.com";
+  const GOOGLE_CLIENT_ID = "662580645426-qhe4g7235oufcgmjfjfviipfrhb053oj.apps.googleusercontent.com";
 
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
