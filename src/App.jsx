@@ -87,12 +87,18 @@ function AppContent() {
   const fetchGmailTransactions = async (token) => {
     setIsSyncing(true);
     try {
-      // 1. Search for bank alerts in Gmail
+      console.log("Fetching messages with token:", token);
       const query = encodeURIComponent('debited OR spent AED after:2024/01/01');
       const searchRes = await fetch(`https://gmail.googleapis.com/v1/users/me/messages?q=${query}&maxResults=10`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+
       const searchData = await searchRes.json();
+
+      if (!searchRes.ok) {
+        console.error("Gmail API Error:", searchData);
+        throw new Error(searchData.error?.message || "Gmail API request failed");
+      }
 
       if (!searchData.messages) {
         alert("No bank emails found in your Gmail inbox for this month.");
@@ -100,7 +106,6 @@ function AppContent() {
         return;
       }
 
-      // 2. Fetch snippets of found messages
       const allFetched = [];
       for (const msg of searchData.messages) {
         const msgRes = await fetch(`https://gmail.googleapis.com/v1/users/me/messages/${msg.id}`, {
@@ -115,16 +120,16 @@ function AppContent() {
         const unique = allFetched.filter(item => !expenses.some(e => e.amount === item.amount && e.merchant === item.merchant));
         if (unique.length > 0) {
           setExpenses(prev => [...unique, ...prev]);
-          alert(`Success! Found and imported ${unique.length} new transactions from your Gmail.`);
+          alert(`Success! Found and imported ${unique.length} new transactions.`);
         } else {
           alert("All found transactions are already in your history.");
         }
       } else {
-        alert("Could not extract specific amounts from found emails. Try copying the text manually or connecting a different bank.");
+        alert("Found bank emails, but couldn't extract amounts. Try adding them manually.");
       }
     } catch (err) {
-      console.error(err);
-      alert("Error reading Gmail. Please try again.");
+      console.error("App Error:", err);
+      alert(`Gmail Error: ${err.message}`);
     }
     setIsSyncing(false);
   };
