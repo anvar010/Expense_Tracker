@@ -45,11 +45,7 @@ export default function App() {
   const [incomingData, setIncomingData] = useState(null);
   const [expenses, setExpenses] = useState(() => {
     const saved = localStorage.getItem('expenses_v2');
-    return saved ? JSON.parse(saved) : [
-      { id: '1', amount: 245.00, merchant: 'Apple Store', date: subDays(new Date(), 1).toISOString() },
-      { id: '2', amount: 15.00, merchant: 'Starbucks', date: subDays(new Date(), 2).toISOString() },
-      { id: '3', amount: 350.50, merchant: 'Etisalat UAE', date: subDays(new Date(), 3).toISOString() },
-    ];
+    return saved ? JSON.parse(saved) : [];
   });
 
   useEffect(() => {
@@ -103,14 +99,7 @@ export default function App() {
     setIsSyncing(true);
     setTimeout(() => {
       setIsSyncing(false);
-      const mockEmailData = {
-        id: Date.now().toString(),
-        amount: 85.00,
-        merchant: 'Amazon Food',
-        date: new Date().toISOString()
-      };
-      setIncomingData(mockEmailData);
-      setActiveTab('add');
+      alert("Inbox scanned. No new bank alerts found at this time.");
     }, 2000);
   };
 
@@ -132,8 +121,8 @@ export default function App() {
               <div className="card-amount">
                 <span>AED</span>{totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </div>
-              <p style={{ fontSize: 13, color: '#34c759', marginTop: 12, fontWeight: 600 }}>
-                ↑ 12.5% vs last month
+              <p style={{ fontSize: 13, color: totalSpent > 0 ? '#34c759' : '#8e8e93', marginTop: 12, fontWeight: 600 }}>
+                {totalSpent > 0 ? '↑ Tracking Active' : 'Waiting for Data'}
               </p>
             </div>
 
@@ -154,18 +143,27 @@ export default function App() {
             </div>
 
             <div className="tx-container">
-              {expenses.map((exp) => (
-                <div key={exp.id} className="tx-row">
-                  <div className="tx-icon">{getCategoryIcon(exp.merchant)}</div>
-                  <div className="tx-details">
-                    <p className="tx-title">{exp.merchant}</p>
-                    <p className="tx-meta">{format(new Date(exp.date), 'EEEE, h:mm a')}</p>
-                  </div>
-                  <div className="tx-value negative">
-                    - {exp.amount.toFixed(2)}
-                  </div>
+              {expenses.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '60px 20px', color: '#8e8e93' }}>
+                  <div style={{ marginBottom: 12, opacity: 0.3 }}><Wallet size={48} style={{ margin: '0 auto' }} /></div>
+                  <p style={{ fontSize: 15, fontWeight: 500 }}>No Transactions Yet</p>
+                  <p style={{ fontSize: 13, marginTop: 4 }}>Add your first expense to begin tracking.</p>
                 </div>
-              ))}
+              ) : (
+                expenses.slice(0, 10).map((exp) => (
+                  <div key={exp.id} className="tx-row">
+                    <div className="tx-icon">{getCategoryIcon(exp.merchant)}</div>
+                    <div className="tx-details">
+                      <p className="tx-title">{exp.merchant}</p>
+                      <p className="tx-meta">{format(new Date(exp.date), 'h:mm a')}</p>
+                    </div>
+                    <div className="tx-value negative">
+                      <p style={{ fontSize: 16, fontWeight: 700 }}>AED {exp.amount.toFixed(2)}</p>
+                      <p style={{ fontSize: 11, color: '#8e8e93', fontWeight: 500, marginTop: 2 }}>{format(new Date(exp.date), 'dd MMM')}</p>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </motion.div>
         )}
