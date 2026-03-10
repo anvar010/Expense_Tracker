@@ -184,17 +184,17 @@ export default function App() {
       </AnimatePresence>
 
       <nav className="tab-bar">
-        <div className={`tab-item ${activeTab === 'summary' ? 'active' : ''}`} onClick={() => setActiveTab('summary')}>
-          <LayoutDashboard size={24} />
+        <button className={`tab-item ${activeTab === 'summary' ? 'active' : ''}`} onClick={() => setActiveTab('summary')}>
+          <LayoutDashboard size={22} />
           <span>Dashboard</span>
-        </div>
-        <div className="tab-item" onClick={() => setActiveTab('add')}>
-          <div className="fab"><Plus size={32} /></div>
-        </div>
-        <div className={`tab-item ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
-          <History size={24} />
+        </button>
+        <button className="tab-item add-btn" onClick={() => setActiveTab('add')}>
+          <Plus size={28} />
+        </button>
+        <button className={`tab-item ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
+          <History size={22} />
           <span>History</span>
-        </div>
+        </button>
       </nav>
     </div>
   );
