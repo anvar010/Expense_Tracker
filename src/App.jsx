@@ -20,10 +20,10 @@ import {
 } from 'lucide-react';
 import { format, subDays, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 
 const parseBulkFetch = (text) => {
-  // Enhanced regex for multiple AED alerts in one text block
-  const txRegex = /(?:aed|spent|debited|amt)\.?\s*([\d,]+\.?\d*).*?(?:at|to|on|with)\s+([A-Z0-9\s&]{3,25})/gi;
+  const txRegex = /(?:aed|spent|debited|amt)\.?\s*([\d,]+\.?\d*).*?(?:at|to|on|with|from)\s+([A-Z0-9\s&]{3,25})/gi;
   const results = [];
   let match;
   while ((match = txRegex.exec(text)) !== null) {
@@ -47,10 +47,11 @@ const getCategoryIcon = (merchant) => {
   return <CreditCard size={20} color="#8e8e93" />;
 };
 
-export default function App() {
+function AppContent() {
   const [activeTab, setActiveTab] = useState('summary');
   const [isSyncing, setIsSyncing] = useState(false);
   const [isEmailConnected, setIsEmailConnected] = useState(false);
+  const [googleToken, setGoogleToken] = useState(null);
   const [incomingData, setIncomingData] = useState(null);
   const [expenses, setExpenses] = useState(() => {
     const saved = localStorage.getItem('expenses_v2');
@@ -60,19 +61,6 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('expenses_v2', JSON.stringify(expenses));
   }, [expenses]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const content = params.get('sms');
-    if (content) {
-      const result = parseSMS(decodeURIComponent(content));
-      if (result.amount > 0) {
-        setIncomingData(result);
-        setActiveTab('add');
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
-    }
-  }, []);
 
   const totalSpent = useMemo(() => {
     const start = startOfMonth(new Date());
@@ -96,49 +84,73 @@ export default function App() {
 
   const COLORS = ['#5856d6', '#af52de', '#007aff', '#ff9500'];
 
+  const fetchGmailTransactions = async (token) => {
+    setIsSyncing(true);
+    try {
+      // 1. Search for bank alerts in Gmail
+      const query = encodeURIComponent('debited OR spent AED after:2024/01/01');
+      const searchRes = await fetch(`https://gmail.googleapis.com/v1/users/me/messages?q=${query}&maxResults=10`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const searchData = await searchRes.json();
+
+      if (!searchData.messages) {
+        alert("No bank emails found in your Gmail inbox for this month.");
+        setIsSyncing(false);
+        return;
+      }
+
+      // 2. Fetch snippets of found messages
+      const allFetched = [];
+      for (const msg of searchData.messages) {
+        const msgRes = await fetch(`https://gmail.googleapis.com/v1/users/me/messages/${msg.id}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const msgData = await msgRes.json();
+        const results = parseBulkFetch(msgData.snippet);
+        allFetched.push(...results);
+      }
+
+      if (allFetched.length > 0) {
+        const unique = allFetched.filter(item => !expenses.some(e => e.amount === item.amount && e.merchant === item.merchant));
+        if (unique.length > 0) {
+          setExpenses(prev => [...unique, ...prev]);
+          alert(`Success! Found and imported ${unique.length} new transactions from your Gmail.`);
+        } else {
+          alert("All found transactions are already in your history.");
+        }
+      } else {
+        alert("Could not extract specific amounts from found emails. Try copying the text manually or connecting a different bank.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error reading Gmail. Please try again.");
+    }
+    setIsSyncing(false);
+  };
+
+  const login = useGoogleLogin({
+    onSuccess: (tokenResponse) => {
+      setGoogleToken(tokenResponse.access_token);
+      setIsEmailConnected(true);
+      fetchGmailTransactions(tokenResponse.access_token);
+    },
+    scope: 'https://www.googleapis.com/auth/gmail.readonly',
+    onError: () => alert('Google Login Failed'),
+  });
+
+  const handleSync = () => {
+    if (!isEmailConnected) {
+      login();
+      return;
+    }
+    fetchGmailTransactions(googleToken);
+  };
+
   const handleManualAdd = (tx) => {
     setExpenses([tx, ...expenses]);
     setIncomingData(null);
     setActiveTab('summary');
-  };
-
-  const handleSync = async () => {
-    if (!isEmailConnected) {
-      const confirm = window.confirm("SpendWise wants to connect to your Gmail/Outlook to scan for bank debit alerts. This happens locally on your device. Proceed?");
-      if (confirm) {
-        setIsSyncing(true);
-        setTimeout(() => {
-          setIsEmailConnected(true);
-          setIsSyncing(false);
-          alert("Connected to Email! New transactions will now appear automatically.");
-        }, 1500);
-      }
-      return;
-    }
-
-    setIsSyncing(true);
-
-    // Attempt to read from Clipboard (Works on iPhone if user grants permission)
-    try {
-      const text = await navigator.clipboard.readText();
-      const fetched = parseBulkFetch(text);
-
-      setTimeout(() => {
-        setIsSyncing(false);
-        if (fetched.length > 0) {
-          const confirm = window.confirm(`Found ${fetched.length} new transactions in your copied email text. Import them now?`);
-          if (confirm) {
-            setExpenses(prev => [...fetched, ...prev]);
-            alert(`Success! Fetched ${fetched.length} transactions from this month.`);
-          }
-        } else {
-          alert("No new AED transactions found in your clipboard. Make sure you copied the bank email text!");
-        }
-      }, 1500);
-    } catch (err) {
-      setIsSyncing(false);
-      alert("Please allow SpendWise to access your clipboard to fetch email data.");
-    }
   };
 
   return (
@@ -176,14 +188,13 @@ export default function App() {
               <div className="sync-text">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Mail size={16} color={isEmailConnected ? '#34c759' : '#5856d6'} />
-                  <h4>{isEmailConnected ? 'Bank Email Connected' : 'Connect Bank Email'}</h4>
+                  <h4>{isEmailConnected ? 'Direct Gmail Sync Active' : 'Connect Your Gmail'}</h4>
                 </div>
-                <p>{isSyncing ? 'Scanning for Transactions...' : (isEmailConnected ? 'Tap to refetch latest alerts' : 'Import automatically from Gmail/Outlook')}</p>
+                <p>{isSyncing ? 'Scanning Inbox...' : (isEmailConnected ? 'Tap to check for new alerts' : 'Automatically read bank debit emails')}</p>
               </div>
               <RefreshCw size={18} className={isSyncing ? 'animate-spin text-indigo-400' : 'text-zinc-600'} />
             </div>
 
-            {/* Spending Insights Panel */}
             <div className="wallet-card" style={{ padding: '20px', background: '#1c1c1e', marginBottom: 24 }}>
               <div className="section-header" style={{ padding: 0, marginBottom: 15 }}>
                 <h3 style={{ fontSize: 16 }}>Spending Insights</h3>
@@ -233,7 +244,7 @@ export default function App() {
                 <div style={{ textAlign: 'center', padding: '60px 20px', color: '#8e8e93' }}>
                   <div style={{ marginBottom: 12, opacity: 0.3 }}><Wallet size={48} style={{ margin: '0 auto' }} /></div>
                   <p style={{ fontSize: 15, fontWeight: 500 }}>No Transactions Yet</p>
-                  <p style={{ fontSize: 13, marginTop: 4 }}>Add your first expense to begin tracking.</p>
+                  <p style={{ fontSize: 13, marginTop: 4 }}>Connect Gmail to scan for bank alerts.</p>
                 </div>
               ) : (
                 expenses.slice(0, 5).map((exp) => (
@@ -326,7 +337,7 @@ function AddTransaction({ initial, onSave, onCancel }) {
       </button>
 
       <p style={{ textAlign: 'center', fontSize: 13, color: '#8e8e93', marginTop: 24 }}>
-        This transaction was detected from your {initial ? 'Email Sync' : 'Manual Entry'}.
+        This transaction was parsed from your Gmail inbox.
       </p>
     </motion.div>
   );
@@ -345,14 +356,28 @@ function HistoryPage({ expenses, setExpenses, onBack }) {
           <div className="tx-icon">{getCategoryIcon(exp.merchant)}</div>
           <div className="tx-details">
             <p className="tx-title">{exp.merchant}</p>
-            <p className="tx-meta">{format(new Date(exp.date), 'MMM dd, yyyy')}</p>
+            <p className="tx-meta">{format(new Date(exp.date), 'MMM dd, h:mm a')}</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <p className="tx-value">- {exp.amount.toFixed(2)}</p>
-            <Trash2 size={16} color="#8e8e93" onClick={() => setExpenses(expenses.filter(e => e.id !== exp.id))} />
+            <p className="tx-value">- AED {exp.amount.toFixed(2)}</p>
+            <Trash2 size={16} color="#8e8e93" onClick={() => {
+              if (window.confirm('Delete this transaction?')) setExpenses(expenses.filter(e => e.id !== exp.id))
+            }} />
           </div>
         </div>
       ))}
     </motion.div>
+  );
+}
+
+export default function App() {
+  // YOU NEED TO REPLACE THIS CLIENT_ID WITH YOUR OWN FROM GOOGLE CLOUD CONSOLE
+  // I will provide instructions on how to get it in the chat.
+  const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
+
+  return (
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+      <AppContent />
+    </GoogleOAuthProvider>
   );
 }
