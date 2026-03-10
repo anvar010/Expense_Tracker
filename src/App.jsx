@@ -15,9 +15,11 @@ import {
   Smartphone,
   CreditCard,
   Target,
-  RotateCcw
+  RotateCcw,
+  PieChart as PieIcon
 } from 'lucide-react';
 import { format, subDays, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
 const parseSMS = (text) => {
   const amountRegex = /(?:rs|inr|aed|\$|usd|eur|amount|debited|spent)\.?\s*([\d,]+\.?\d*)/i;
@@ -43,6 +45,7 @@ const getCategoryIcon = (merchant) => {
 export default function App() {
   const [activeTab, setActiveTab] = useState('summary');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isEmailConnected, setIsEmailConnected] = useState(false);
   const [incomingData, setIncomingData] = useState(null);
   const [expenses, setExpenses] = useState(() => {
     const saved = localStorage.getItem('expenses_v2');
@@ -53,7 +56,6 @@ export default function App() {
     localStorage.setItem('expenses_v2', JSON.stringify(expenses));
   }, [expenses]);
 
-  // Handle URL/Email Ingest
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const content = params.get('sms');
@@ -75,13 +77,25 @@ export default function App() {
       .reduce((acc, curr) => acc + curr.amount, 0);
   }, [expenses]);
 
+  const categoryData = useMemo(() => {
+    const categories = {};
+    expenses.forEach(e => {
+      const m = e.merchant.toLowerCase();
+      const cat = m.includes('amazon') || m.includes('apple') ? 'Shopping' :
+        m.includes('starbucks') || m.includes('coffee') ? 'Dining' :
+          m.includes('etisalat') || m.includes('du') || m.includes('bill') ? 'Bills' : 'Other';
+      categories[cat] = (categories[cat] || 0) + e.amount;
+    });
+    return Object.keys(categories).map(name => ({ name, value: categories[name] }));
+  }, [expenses]);
+
+  const COLORS = ['#5856d6', '#af52de', '#007aff', '#ff9500'];
+
   const handleManualAdd = (tx) => {
     setExpenses([tx, ...expenses]);
     setIncomingData(null);
     setActiveTab('summary');
   };
-
-  const [isEmailConnected, setIsEmailConnected] = useState(false);
 
   const handleSync = () => {
     if (!isEmailConnected) {
@@ -146,9 +160,49 @@ export default function App() {
               <RefreshCw size={18} className={isSyncing ? 'animate-spin text-indigo-400' : 'text-zinc-600'} />
             </div>
 
+            {/* Spending Insights Panel */}
+            <div className="wallet-card" style={{ padding: '20px', background: '#1c1c1e', marginBottom: 24 }}>
+              <div className="section-header" style={{ padding: 0, marginBottom: 15 }}>
+                <h3 style={{ fontSize: 16 }}>Spending Insights</h3>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', height: 160 }}>
+                <div style={{ width: '50%', height: '100%' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={categoryData.length > 0 ? categoryData : [{ name: 'Empty', value: 1 }]}
+                        innerRadius={50}
+                        outerRadius={70}
+                        paddingAngle={5}
+                        dataKey="value"
+                      >
+                        {categoryData.length > 0 ?
+                          categoryData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          )) :
+                          <Cell fill="#2c2c2e" />
+                        }
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{ width: '50%', paddingLeft: 10 }}>
+                  {categoryData.length > 0 ? categoryData.map((cat, i) => (
+                    <div key={cat.name} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: COLORS[i % COLORS.length] }} />
+                        <span style={{ fontSize: 12, color: '#8e8e93' }}>{cat.name}</span>
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 600 }}>{((cat.value / totalSpent) * 100).toFixed(0)}%</span>
+                    </div>
+                  )) : <p style={{ fontSize: 12, color: '#8e8e93' }}>No data to analyze</p>}
+                </div>
+              </div>
+            </div>
+
             <div className="section-header">
               <h3>Latest Activity</h3>
-              <p style={{ fontSize: 14, color: '#007aff', fontWeight: 500 }}>Show All</p>
+              <p style={{ fontSize: 14, color: '#007aff', fontWeight: 500 }} onClick={() => setActiveTab('history')}>Show All</p>
             </div>
 
             <div className="tx-container">
@@ -159,7 +213,7 @@ export default function App() {
                   <p style={{ fontSize: 13, marginTop: 4 }}>Add your first expense to begin tracking.</p>
                 </div>
               ) : (
-                expenses.slice(0, 10).map((exp) => (
+                expenses.slice(0, 5).map((exp) => (
                   <div key={exp.id} className="tx-row">
                     <div className="tx-icon">{getCategoryIcon(exp.merchant)}</div>
                     <div className="tx-details">
