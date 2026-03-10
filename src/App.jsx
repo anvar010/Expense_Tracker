@@ -14,7 +14,8 @@ import {
   Coffee,
   Smartphone,
   CreditCard,
-  Target
+  Target,
+  RotateCcw
 } from 'lucide-react';
 import { format, subDays, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 
@@ -110,10 +111,18 @@ export default function App() {
           <motion.div key="summary" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <header className="header-wallet">
               <div className="header-text">
-                <p className="card-label" style={{ marginBottom: 4 }}>Tuesday, 10 Mar</p>
+                <p className="card-label" style={{ marginBottom: 4 }}>{format(new Date(), 'EEEE, dd MMM')}</p>
                 <h1>Wallet</h1>
               </div>
-              <div className="profile-pill">JD</div>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <button
+                  onClick={() => window.location.reload()}
+                  style={{ background: 'none', border: 'none', color: '#8e8e93', padding: 8, cursor: 'pointer' }}
+                >
+                  <RotateCcw size={20} />
+                </button>
+                <div className="profile-pill">JD</div>
+              </div>
             </header>
 
             <div className="wallet-card">
